@@ -1,22 +1,31 @@
 import { useEffect, useState } from 'react';
-import { Alert, Image, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert } from '../lib/alert';
 import { router, Stack } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
+import { PRESETS, uploadImage } from '../lib/cloudinary';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { StoreSettings } from '../types';
 import PrimaryButton from '../components/PrimaryButton';
+import ItemRow from '../components/ItemRow';
 import { COLORS } from '../constants/theme';
 
 export default function Checkout() {
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
   const { items, total, clear } = useCart();
   const [settings, setSettings] = useState<StoreSettings | null>(null);
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [proofUri, setProofUri] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Autocompleta con los datos guardados en el perfil (sin pisar lo que el usuario ya escribió)
+  useEffect(() => {
+    if (profile?.address) setAddress((a) => a || profile.address!);
+    if (profile?.phone) setPhone((p) => p || profile.phone!);
+  }, [profile]);
 
   useEffect(() => {
     supabase
@@ -70,18 +79,8 @@ export default function Checkout() {
       const { error: itemsError } = await supabase.from('order_items').insert(itemsPayload);
       if (itemsError) throw itemsError;
 
-      const ext = proofUri.split('.').pop() || 'jpg';
-      const path = `${session.user.id}/${order.id}.${ext}`;
-      const response = await fetch(proofUri);
-      const blob = await response.blob();
-      const { error: uploadError } = await supabase.storage.from('payment-proofs').upload(path, blob, {
-        contentType: blob.type || 'image/jpeg',
-        upsert: true,
-      });
-      if (uploadError) throw uploadError;
-
-      const { data: pub } = supabase.storage.from('payment-proofs').getPublicUrl(path);
-      await supabase.from('orders').update({ payment_proof_url: pub.publicUrl }).eq('id', order.id);
+      const proofUrl = await uploadImage(proofUri, PRESETS.proofs);
+      await supabase.from('orders').update({ payment_proof_url: proofUrl }).eq('id', order.id);
 
       clear();
       router.replace(`/orders/${order.id}`);
@@ -95,6 +94,9 @@ export default function Checkout() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 18 }}>
       <Stack.Screen options={{ title: 'Confirmar pago' }} />
+      {items.map((i) => (
+        <ItemRow key={i.product.id} image={i.product.images?.[0]} name={i.product.name} quantity={i.quantity} unitPrice={i.product.price} />
+      ))}
       <Text style={styles.total}>Total a pagar: ${total.toLocaleString('es-CO')}</Text>
 
       <View style={styles.card}>

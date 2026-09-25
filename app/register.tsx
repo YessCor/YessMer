@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '../lib/alert';
 import { Link, router, Stack, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import PrimaryButton from '../components/PrimaryButton';
-import { COLORS } from '../constants/theme';
+import Input from '../components/Input';
+import { COLORS, RADIUS, SHADOW } from '../constants/theme';
 
 export default function Register() {
   const { redirect } = useLocalSearchParams<{ redirect?: string }>();
@@ -25,46 +27,37 @@ export default function Register() {
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
-      <Stack.Screen options={{ title: 'Crear cuenta' }} />
-      <Text style={styles.title}>Crea tu cuenta</Text>
-      <Text style={styles.subtitle}>Regístrate para comprar y seguir tus pedidos</Text>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <Stack.Screen options={{ title: 'Crear cuenta' }} />
+        <View style={styles.card}>
+          <Text style={styles.logo}>Yess<Text style={{ color: COLORS.dark }}>mer</Text></Text>
+          <Text style={styles.title}>Crea tu cuenta</Text>
+          <Text style={styles.subtitle}>Regístrate para comprar y seguir tus pedidos</Text>
 
-      <TextInput placeholder="Nombre completo" value={fullName} onChangeText={setFullName} style={styles.input} />
-      <TextInput
-        placeholder="Correo electrónico"
-        autoCapitalize="none"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-        style={styles.input}
-      />
-      <TextInput placeholder="Contraseña" secureTextEntry value={password} onChangeText={setPassword} style={styles.input} />
-      <PrimaryButton title="Crear cuenta" onPress={onSubmit} loading={loading} />
+          <Input label="Nombre completo" placeholder="Tu nombre" value={fullName} onChangeText={setFullName} />
+          <Input label="Correo electrónico" placeholder="tu@correo.com" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
+          <Input label="Contraseña" placeholder="Mínimo 6 caracteres" secureTextEntry value={password} onChangeText={setPassword} onSubmitEditing={onSubmit} />
+          <PrimaryButton title="Crear cuenta" onPress={onSubmit} loading={loading} />
 
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>¿Ya tienes cuenta? </Text>
-        <Link href={{ pathname: '/login', params: { redirect } }} style={styles.link}>
-          Inicia sesión
-        </Link>
-      </View>
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>¿Ya tienes cuenta? </Text>
+            <Link href={{ pathname: '/login', params: { redirect } }} style={styles.link}>
+              Inicia sesión
+            </Link>
+          </View>
+        </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center', backgroundColor: COLORS.bg },
-  title: { fontSize: 22, fontWeight: '800', color: COLORS.text, marginBottom: 6 },
-  subtitle: { fontSize: 14, color: COLORS.muted, marginBottom: 24 },
-  input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 12,
-    fontSize: 15,
-  },
+  container: { flexGrow: 1, padding: 20, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.bg },
+  card: { width: '100%', maxWidth: 420, backgroundColor: '#fff', borderRadius: RADIUS.lg, padding: 24, ...SHADOW },
+  logo: { color: COLORS.primary, fontSize: 28, fontWeight: '800', marginBottom: 14, letterSpacing: -0.5 },
+  title: { fontSize: 22, fontWeight: '800', color: COLORS.text, marginBottom: 4 },
+  subtitle: { fontSize: 14, color: COLORS.muted, marginBottom: 22 },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 20 },
   footerText: { color: COLORS.muted },
   link: { color: COLORS.primary, fontWeight: '700' },

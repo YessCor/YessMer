@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
-import { Alert, FlatList, Image, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Image, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '../../../lib/alert';
 import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../context/AuthContext';
@@ -7,6 +8,7 @@ import { Order, OrderItem } from '../../../types';
 import OrderStatusBadge from '../../../components/OrderStatusBadge';
 import PrimaryButton from '../../../components/PrimaryButton';
 import EmptyState from '../../../components/EmptyState';
+import ItemRow from '../../../components/ItemRow';
 import { COLORS } from '../../../constants/theme';
 
 export default function AdminOrderDetail() {
@@ -19,7 +21,7 @@ export default function AdminOrderDetail() {
   const load = useCallback(async () => {
     const { data: o } = await supabase.from('orders').select('*').eq('id', id).single();
     setOrder(o as Order);
-    const { data: its } = await supabase.from('order_items').select('*').eq('order_id', id);
+    const { data: its } = await supabase.from('order_items').select('*, products(images)').eq('order_id', id);
     setItems(its ?? []);
   }, [id]);
 
@@ -90,12 +92,7 @@ export default function AdminOrderDetail() {
           </View>
         }
         renderItem={({ item }) => (
-          <View style={styles.itemRow}>
-            <Text style={styles.itemName} numberOfLines={2}>
-              {item.quantity}x {item.product_name}
-            </Text>
-            <Text style={styles.itemPrice}>${(item.unit_price * item.quantity).toLocaleString('es-CO')}</Text>
-          </View>
+          <ItemRow image={item.products?.images?.[0]} name={item.product_name} quantity={item.quantity} unitPrice={item.unit_price} />
         )}
         ListFooterComponent={
           <View>

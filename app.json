@@ -6,15 +6,33 @@
     "orientation": "portrait",
     "scheme": "yessmer",
     "userInterfaceStyle": "automatic",
-    "splash": { "backgroundColor": "#111827" },
-    "assetBundlePatterns": ["**/*"],
-    "ios": { "supportsTablet": true, "bundleIdentifier": "com.yessmer.app" },
+    "splash": {
+      "backgroundColor": "#111827"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yessmer.app"
+    },
     "android": {
       "package": "com.yessmer.app",
-      "adaptiveIcon": { "backgroundColor": "#111827" }
+      "adaptiveIcon": {
+        "backgroundColor": "#111827"
+      }
     },
-    "web": { "bundler": "metro" },
-    "plugins": ["expo-router"],
-    "extra": { "router": { "origin": false } }
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font"
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      }
+    }
   }
 }

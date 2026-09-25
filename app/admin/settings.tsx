@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert } from '../../lib/alert';
 import { Stack } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../../lib/supabase';
+import { uploadImage } from '../../lib/cloudinary';
 import { useAuth } from '../../context/AuthContext';
 import { StoreSettings } from '../../types';
 import PrimaryButton from '../../components/PrimaryButton';
@@ -57,17 +59,7 @@ export default function AdminSettings() {
     try {
       let qrUrl = qrUri;
       if (newQrPicked && qrUri) {
-        const ext = qrUri.split('.').pop() || 'jpg';
-        const path = `qr-${Date.now()}.${ext}`;
-        const response = await fetch(qrUri);
-        const blob = await response.blob();
-        const { error: uploadError } = await supabase.storage.from('settings').upload(path, blob, {
-          contentType: blob.type || 'image/jpeg',
-          upsert: true,
-        });
-        if (uploadError) throw uploadError;
-        const { data: pub } = supabase.storage.from('settings').getPublicUrl(path);
-        qrUrl = pub.publicUrl;
+        qrUrl = await uploadImage(qrUri);
       }
 
       const { error } = await supabase

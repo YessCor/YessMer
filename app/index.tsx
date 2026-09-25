@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
@@ -9,17 +9,24 @@ import CategoryChip from '../components/CategoryChip';
 import EmptyState from '../components/EmptyState';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
-import { COLORS } from '../constants/theme';
+import { COLORS, MAX_WIDTH, RADIUS } from '../constants/theme';
+
+const GAP = 14;
 
 export default function Home() {
   const { session, isAdmin } = useAuth();
   const { count } = useCart();
+  const { width: winWidth } = useWindowDimensions();
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  const contentWidth = Math.min(winWidth, MAX_WIDTH) - 32;
+  const columns = winWidth >= 1000 ? 4 : winWidth >= 700 ? 3 : 2;
+  const cardWidth = (contentWidth - GAP * (columns - 1)) / columns;
 
   const load = useCallback(async () => {
     const { data: cats } = await supabase.from('categories').select('*').order('name');
@@ -43,97 +50,124 @@ export default function Home() {
     load();
   };
 
+  const featured = products.filter((p) => p.is_featured);
+  const showFeatured = featured.length > 0 && !activeCategory && !search.trim();
+
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ headerShown: false }} />
-      <View style={styles.topBar}>
-        <Text style={styles.logo}>Yessmer</Text>
-        <View style={styles.topBarActions}>
-          <Pressable onPress={() => router.push('/cart')} style={styles.iconBtn}>
-            <Ionicons name="cart-outline" size={24} color="#fff" />
-            {count > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{count}</Text>
-              </View>
+      <Stack.Screen options={{ headerShown: false, contentStyle: { maxWidth: '100%', backgroundColor: COLORS.bg } }} />
+      <View style={styles.topBarWrap}>
+        <View style={styles.topBar}>
+          <Text style={styles.logo}>Yess<Text style={{ color: '#fff' }}>mer</Text></Text>
+          <View style={styles.topBarActions}>
+            {isAdmin && (
+              <Pressable onPress={() => router.push('/admin')} style={styles.adminBtn}>
+                <Ionicons name="settings-outline" size={15} color="#fff" />
+                <Text style={styles.adminBtnText}>Admin</Text>
+              </Pressable>
             )}
-          </Pressable>
-          <Pressable onPress={() => router.push(session ? '/profile' : '/login')} style={styles.iconBtn}>
-            <Ionicons name="person-circle-outline" size={26} color="#fff" />
-          </Pressable>
+            <Pressable onPress={() => router.push('/cart')} style={styles.iconBtn}>
+              <Ionicons name="cart-outline" size={24} color="#fff" />
+              {count > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{count}</Text>
+                </View>
+              )}
+            </Pressable>
+            <Pressable onPress={() => router.push(session ? '/profile' : '/login')} style={styles.iconBtn}>
+              <Ionicons name="person-circle-outline" size={27} color="#fff" />
+            </Pressable>
+          </View>
         </View>
       </View>
 
-      <View style={styles.searchWrap}>
-        <Ionicons name="search" size={18} color={COLORS.muted} />
-        <TextInput
-          placeholder="Buscar productos en Yessmer"
-          value={search}
-          onChangeText={setSearch}
-          style={styles.searchInput}
-          returnKeyType="search"
-        />
-      </View>
-
-      {isAdmin && (
-        <Pressable style={styles.adminBanner} onPress={() => router.push('/admin')}>
-          <Ionicons name="settings-outline" size={16} color="#fff" />
-          <Text style={styles.adminBannerText}>Ir al panel de administración</Text>
-        </Pressable>
-      )}
-
-      <FlatList
-        data={products}
-        keyExtractor={(item) => item.id}
-        numColumns={2}
-        columnWrapperStyle={{ justifyContent: 'space-between' }}
-        contentContainerStyle={styles.list}
+      <ScrollView
+        contentContainerStyle={{ alignItems: 'center', paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        ListHeaderComponent={
-          categories.length > 0 ? (
-            <FlatList
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              data={categories}
-              keyExtractor={(c) => c.id}
-              style={{ marginBottom: 14 }}
-              renderItem={({ item }) => (
-                <CategoryChip
-                  label={item.name}
-                  active={activeCategory === item.id}
-                  onPress={() => setActiveCategory(activeCategory === item.id ? null : item.id)}
-                />
+      >
+        <View style={[styles.inner, { padding: 16 }]}>
+          <View style={styles.hero}>
+            <Text style={styles.heroTitle}>Encuentra lo que buscas</Text>
+            <Text style={styles.heroSub}>Los mejores productos, pago fácil con Bre-B / Nequi.</Text>
+            <View style={styles.searchWrap}>
+              <Ionicons name="search" size={18} color={COLORS.muted} />
+              <TextInput
+                placeholder="Buscar productos"
+                placeholderTextColor="#9CA3AF"
+                value={search}
+                onChangeText={setSearch}
+                style={styles.searchInput}
+                returnKeyType="search"
+              />
+              {search.length > 0 && (
+                <Pressable onPress={() => setSearch('')}>
+                  <Ionicons name="close-circle" size={18} color={COLORS.muted} />
+                </Pressable>
               )}
-              ListHeaderComponent={
-                <CategoryChip label="Todas" active={activeCategory === null} onPress={() => setActiveCategory(null)} />
-              }
+            </View>
+          </View>
+
+          {categories.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }}>
+              <CategoryChip label="Todas" active={activeCategory === null} onPress={() => setActiveCategory(null)} />
+              {categories.map((c) => (
+                <CategoryChip
+                  key={c.id}
+                  label={c.name}
+                  active={activeCategory === c.id}
+                  onPress={() => setActiveCategory(activeCategory === c.id ? null : c.id)}
+                />
+              ))}
+            </ScrollView>
+          )}
+
+          {showFeatured && (
+            <>
+              <Text style={styles.sectionTitle}>Destacados</Text>
+              <View style={styles.grid}>
+                {featured.slice(0, columns).map((p) => (
+                  <ProductCard key={p.id} product={p} width={cardWidth} />
+                ))}
+              </View>
+            </>
+          )}
+
+          <Text style={styles.sectionTitle}>{showFeatured ? 'Todos los productos' : 'Productos'}</Text>
+          <View style={styles.grid}>
+            {products.map((p) => (
+              <ProductCard key={p.id} product={p} width={cardWidth} />
+            ))}
+          </View>
+          {!loading && products.length === 0 && (
+            <EmptyState
+              icon="search-outline"
+              title={search || activeCategory ? 'Sin resultados' : 'Aún no hay productos'}
+              subtitle={search || activeCategory ? 'Prueba con otra búsqueda o categoría.' : 'Vuelve pronto, estamos cargando el catálogo.'}
             />
-          ) : null
-        }
-        renderItem={({ item }) => <ProductCard product={item} />}
-        ListEmptyComponent={
-          !loading ? (
-            <EmptyState title="Aún no hay productos" subtitle="Vuelve pronto, estamos cargando el catálogo." />
-          ) : null
-        }
-      />
+          )}
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
+  inner: { width: '100%', maxWidth: MAX_WIDTH },
+  topBarWrap: { backgroundColor: COLORS.dark, paddingTop: 44, paddingBottom: 12, alignItems: 'center' },
   topBar: {
-    backgroundColor: COLORS.dark,
-    paddingTop: 54,
-    paddingBottom: 14,
+    width: '100%',
+    maxWidth: MAX_WIDTH,
     paddingHorizontal: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  logo: { color: COLORS.primary, fontSize: 24, fontWeight: '800' },
+  logo: { color: COLORS.primary, fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
   topBarActions: { flexDirection: 'row', alignItems: 'center' },
-  iconBtn: { marginLeft: 14 },
+  iconBtn: { marginLeft: 16 },
+  adminBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primary, borderRadius: RADIUS.pill, paddingHorizontal: 12, paddingVertical: 6 },
+  adminBtnText: { color: '#fff', fontWeight: '700', fontSize: 12, marginLeft: 4 },
   badge: {
     position: 'absolute',
     top: -6,
@@ -147,28 +181,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  hero: { backgroundColor: COLORS.dark, borderRadius: RADIUS.lg, padding: 20, marginBottom: 18 },
+  heroTitle: { color: '#fff', fontSize: 22, fontWeight: '800' },
+  heroSub: { color: '#9CA3AF', fontSize: 13, marginTop: 4, marginBottom: 16 },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginTop: 14,
     paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
   },
-  searchInput: { flex: 1, paddingVertical: 10, paddingHorizontal: 8, fontSize: 14 },
-  adminBanner: {
-    backgroundColor: COLORS.primary,
-    marginHorizontal: 16,
-    marginTop: 12,
-    padding: 10,
-    borderRadius: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  adminBannerText: { color: '#fff', fontWeight: '700', marginLeft: 6, fontSize: 13 },
-  list: { padding: 16 },
+  searchInput: { flex: 1, paddingVertical: 12, paddingHorizontal: 8, fontSize: 14, color: COLORS.text },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text, marginBottom: 12 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: GAP },
 });

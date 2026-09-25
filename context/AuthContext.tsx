@@ -47,7 +47,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error ? error.message : null };
+    if (!error) return { error: null };
+    if (/not confirmed/i.test(error.message))
+      return { error: 'Tu correo aún no está confirmado. Revisa tu bandeja de entrada o confírmalo desde Supabase.' };
+    if (/invalid login credentials/i.test(error.message))
+      return { error: 'Correo o contraseña incorrectos.' };
+    return { error: error.message };
   };
 
   const signUp = async (email: string, password: string, fullName: string) => {

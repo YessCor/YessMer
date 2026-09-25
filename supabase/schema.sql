@@ -101,7 +101,9 @@ $$ language sql security definer stable;
 
 -- profiles
 create policy "profiles: self or admin read" on public.profiles for select using (auth.uid() = id or public.is_admin());
-create policy "profiles: self update" on public.profiles for update using (auth.uid() = id);
+-- OJO: esta política deja editar la propia fila (incluido role). Después de este esquema
+-- corre migration_003 y migration_004, que impiden que un cliente se vuelva admin.
+create policy "profiles: self update" on public.profiles for update using (auth.uid() = id) with check (auth.uid() = id);
 
 -- categories (lectura publica, escritura solo admin)
 create policy "categories: public read" on public.categories for select using (true);

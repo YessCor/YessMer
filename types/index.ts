@@ -11,6 +11,9 @@ export type Product = {
   name: string;
   description: string | null;
   price: number;
+  compare_at_price: number | null;
+  is_featured: boolean;
+  sku: string | null;
   stock: number;
   category_id: string | null;
   images: string[];
@@ -22,6 +25,8 @@ export type Profile = {
   id: string;
   full_name: string | null;
   phone: string | null;
+  address: string | null;
+  avatar_url: string | null;
   role: 'customer' | 'admin';
   created_at: string;
 };
@@ -54,6 +59,7 @@ export type OrderItem = {
   product_name: string;
   unit_price: number;
   quantity: number;
+  products?: { images: string[] } | null;
 };
 
 export type StoreSettings = {
