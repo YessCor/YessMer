@@ -1,73 +1,50 @@
-// Webhook de Mercado Pago (Checkout API Orders). Configúralo en:
-//   Mercado Pago > Tu integración > Webhooks
-//   URL: https://TU-PROYECTO.supabase.co/functions/v1/mp-webhook
-//   Eventos: Pagos / Orders
+// Webhook de Mercado Pago. La URL se envía en cada preferencia (notification_url),
+// así que no depende de la configuración de webhooks del panel.
 //
-// Mercado Pago solo nos avisa que "algo cambió"; siempre volvemos a consultar
-// la orden por su id (GET /v1/orders/{id}) para confirmar el estado real
-// antes de actualizar el pedido.
+// Mercado Pago solo avisa que "algo cambió"; siempre se vuelve a consultar el pago
+// por su id para confirmar el estado real antes de actualizar el pedido.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
-// El estado del pago dentro de transactions.payments[0] es más específico
-// que el de la orden; se usa primero cuando está disponible.
 const PAYMENT_STATUS_MAP: Record<string, string> = {
   approved: 'confirmado',
-  accredited: 'confirmado',
+  authorized: 'pago_reportado',
+  pending: 'pago_reportado',
+  in_process: 'pago_reportado',
+  in_mediation: 'pago_reportado',
   rejected: 'rechazado',
-  failed: 'rechazado',
   cancelled: 'cancelado',
   refunded: 'rechazado',
   charged_back: 'rechazado',
-  pending: 'pago_reportado',
-  in_process: 'pago_reportado',
-  action_required: 'pago_reportado',
 };
 
-const ORDER_STATUS_MAP: Record<string, string> = {
-  processed: 'confirmado',
-  failed: 'rechazado',
-  cancelled: 'cancelado',
-  expired: 'rechazado',
-  action_required: 'pago_reportado',
-  created: 'pago_reportado',
-};
+const FINAL_STATUSES = ['confirmado', 'enviado'];
 
 Deno.serve(async (req) => {
-  // Siempre respondemos 200 salvo error propio, para que Mercado Pago no reintente indefinidamente.
+  // Siempre se responde 200 para que Mercado Pago no reintente indefinidamente.
   try {
-    let mpOrderId: string | null = null;
+    const url = new URL(req.url);
+    let topic = url.searchParams.get('type') || url.searchParams.get('topic');
+    let paymentId = url.searchParams.get('data.id') || url.searchParams.get('id');
 
     if (req.method === 'POST') {
       const body = await req.json().catch(() => null);
-      if (body?.type === 'order' || body?.action?.startsWith?.('order.')) {
-        mpOrderId = body?.data?.id ? String(body.data.id) : null;
-      }
+      topic = body?.type ?? body?.topic ?? topic;
+      paymentId = body?.data?.id ? String(body.data.id) : paymentId;
     }
 
-    if (!mpOrderId) {
-      const url = new URL(req.url);
-      mpOrderId = url.searchParams.get('data.id') || url.searchParams.get('id');
-    }
-
-    if (!mpOrderId) return new Response('ignored', { status: 200 });
+    if (topic !== 'payment' || !paymentId) return new Response('ignored', { status: 200 });
 
     const accessToken = Deno.env.get('MP_TEST_ACCESS_TOKEN');
     if (!accessToken) return new Response('MP_TEST_ACCESS_TOKEN missing', { status: 200 });
 
-    const mpRes = await fetch(`https://api.mercadopago.com/v1/orders/${mpOrderId}`, {
+    const mpRes = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!mpRes.ok) return new Response('could not fetch order', { status: 200 });
-    const mpOrder = await mpRes.json();
+    if (!mpRes.ok) return new Response('could not fetch payment', { status: 200 });
+    const payment = await mpRes.json();
 
-    const orderId = mpOrder.external_reference;
+    const orderId = payment.external_reference;
     if (!orderId) return new Response('no external_reference', { status: 200 });
-
-    const payment = mpOrder?.transactions?.payments?.[0];
-    const newStatus =
-      (payment?.status && PAYMENT_STATUS_MAP[payment.status]) ||
-      ORDER_STATUS_MAP[mpOrder.status] ||
-      null;
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -76,21 +53,27 @@ Deno.serve(async (req) => {
     const { data: order } = await admin.from('orders').select('*').eq('id', orderId).single();
     if (!order) return new Response('order not found', { status: 200 });
 
-    const finalStatus = newStatus ?? order.status;
-    const wasAlreadyConfirmed = order.status === 'confirmado';
+    // Un pedido ya confirmado no se revierte por notificaciones tardías de otros intentos.
+    if (FINAL_STATUSES.includes(order.status)) return new Response('already final', { status: 200 });
+
+    let newStatus = PAYMENT_STATUS_MAP[payment.status] ?? order.status;
+    // Un pago aprobado por menos del total queda para revisión manual del admin.
+    if (newStatus === 'confirmado' && Number(payment.transaction_amount) < Number(order.total)) {
+      newStatus = 'pago_reportado';
+    }
 
     await admin
       .from('orders')
       .update({
-        status: finalStatus,
-        mp_payment_id: mpOrder.id,
-        mp_status: payment?.status ?? mpOrder.status,
-        mp_status_detail: payment?.status_detail ?? mpOrder.status_detail,
+        status: newStatus,
+        mp_payment_id: String(payment.id),
+        mp_status: payment.status,
+        mp_status_detail: payment.status_detail,
       })
       .eq('id', orderId);
 
     // Igual que cuando el admin confirma un pago manual: descuenta stock una sola vez.
-    if (finalStatus === 'confirmado' && !wasAlreadyConfirmed) {
+    if (newStatus === 'confirmado') {
       const { data: items } = await admin.from('order_items').select('*').eq('order_id', orderId);
       for (const item of items ?? []) {
         if (!item.product_id) continue;

@@ -4,9 +4,10 @@ import { Alert } from '../lib/alert';
 import { router, Stack } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
 import { PRESETS, uploadImage } from '../lib/cloudinary';
-import { createPsePayment, DOC_TYPES, DocType, getPseBanks, PseBank } from '../lib/mercadopago';
+import { createPsePayment } from '../lib/mercadopago';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { StoreSettings } from '../types';
@@ -26,34 +27,12 @@ export default function Checkout() {
   const [method, setMethod] = useState<PaymentMethod>('pse');
   const [submitting, setSubmitting] = useState(false);
 
-  // --- Pago manual (Nequi / Bre-B) ---
   const [proofUri, setProofUri] = useState<string | null>(null);
-
-  // --- Pago con Mercado Pago (PSE) ---
-  const [banks, setBanks] = useState<PseBank[]>([]);
-  const [banksError, setBanksError] = useState<string | null>(null);
-  const [loadingBanks, setLoadingBanks] = useState(false);
-  const [bankId, setBankId] = useState<string | null>(null);
-  const [docType, setDocType] = useState<DocType>('CC');
-  const [docNumber, setDocNumber] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
-  const [entityType, setEntityType] = useState<'individual' | 'association'>('individual');
-  const [city, setCity] = useState('');
-  const [neighborhood, setNeighborhood] = useState('');
-  const [zipCode, setZipCode] = useState('');
 
   useEffect(() => {
     if (profile?.address) setAddress((a) => a || profile.address!);
     if (profile?.phone) setPhone((p) => p || profile.phone!);
-    if (profile?.full_name) {
-      const parts = profile.full_name.trim().split(/\s+/);
-      setFirstName((v) => v || parts[0] || '');
-      setLastName((v) => v || parts.slice(1).join(' '));
-    }
-    if (session?.user?.email) setEmail((e) => e || session.user.email!);
-  }, [profile, session]);
+  }, [profile]);
 
   useEffect(() => {
     supabase
@@ -67,16 +46,6 @@ export default function Checkout() {
   useEffect(() => {
     if (!session) router.replace('/login?redirect=/checkout');
   }, [session]);
-
-  useEffect(() => {
-    if (method !== 'pse' || banks.length > 0 || loadingBanks) return;
-    setLoadingBanks(true);
-    setBanksError(null);
-    getPseBanks()
-      .then(setBanks)
-      .catch((e) => setBanksError(e?.message ?? 'No se pudo cargar la lista de bancos'))
-      .finally(() => setLoadingBanks(false));
-  }, [method]);
 
   if (!session) return null;
 
@@ -114,7 +83,20 @@ export default function Checkout() {
     return order;
   };
 
+  const hasShippingData = () => {
+    if (items.length === 0) {
+      Alert.alert('Tu carrito está vacío');
+      return false;
+    }
+    if (!address.trim() || !phone.trim()) {
+      Alert.alert('Ingresa dirección y teléfono de envío');
+      return false;
+    }
+    return true;
+  };
+
   const submitManual = async () => {
+    if (!hasShippingData()) return;
     if (!proofUri) return Alert.alert('Sube el pantallazo del pago por Nequi / Bre-B antes de continuar');
     setSubmitting(true);
     try {
@@ -132,41 +114,24 @@ export default function Checkout() {
   };
 
   const submitPse = async () => {
-    if (!bankId) return Alert.alert('Selecciona tu banco para pagar con PSE');
-    if (!firstName.trim() || !lastName.trim()) return Alert.alert('Ingresa tu nombre completo');
-    if (!docNumber.trim()) return Alert.alert('Ingresa tu número de documento');
-    if (!email.trim()) return Alert.alert('Ingresa tu correo electrónico');
-    if (!city.trim() || !neighborhood.trim() || !zipCode.trim()) {
-      return Alert.alert('Ingresa ciudad, barrio y código postal');
-    }
+    if (!hasShippingData()) return;
 
     setSubmitting(true);
     try {
       const order = await createOrder('pendiente_pago');
+      const orderPath = `/orders/${order.id}`;
+      const returnTo = Platform.OS === 'web' ? `${window.location.origin}${orderPath}` : Linking.createURL(orderPath);
 
-      const { redirect_url } = await createPsePayment(order.id, {
-        email: email.trim(),
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        docType,
-        docNumber: docNumber.trim(),
-        entityType,
-        financialInstitution: bankId,
-        phone: phone.trim(),
-        city: city.trim(),
-        neighborhood: neighborhood.trim(),
-        zipCode: zipCode.trim(),
-      });
-
+      const { redirect_url } = await createPsePayment(order.id, returnTo);
       clear();
 
       if (Platform.OS === 'web') {
-        window.open(redirect_url, '_blank');
-      } else {
-        await WebBrowser.openBrowserAsync(redirect_url);
+        // Misma pestaña: window.open tras un await lo bloquean los navegadores.
+        window.location.assign(redirect_url);
+        return;
       }
-
-      router.replace(`/orders/${order.id}`);
+      await WebBrowser.openAuthSessionAsync(redirect_url, returnTo);
+      router.replace(orderPath);
     } catch (e: any) {
       Alert.alert('No pudimos iniciar el pago con PSE', e?.message ?? 'Intenta de nuevo');
     } finally {
@@ -175,23 +140,6 @@ export default function Checkout() {
   };
 
   const submitOrder = () => (method === 'pse' ? submitPse() : submitManual());
-
-  // Solo para pruebas: llena el formulario con el comprador de prueba de Mercado Pago,
-  // requerido cuando se usan credenciales de prueba (Cuentas de prueba > Comprador).
-  const fillTestData = () => {
-    setEntityType('individual');
-    setFirstName('Comprador');
-    setLastName('Prueba');
-    setEmail('test_user_3020853863843777441@testuser.com');
-    setDocType('CC');
-    setDocNumber('1234567890');
-    setAddress((a) => a || 'Calle 10 # 100');
-    setPhone((p) => p || '3001234567');
-    setCity('Bogota');
-    setNeighborhood('Centro');
-    setZipCode('110111');
-    if (!bankId && banks[0]) setBankId(banks[0].id);
-  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 18 }}>
@@ -216,73 +164,10 @@ export default function Checkout() {
       {method === 'pse' ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Paga con PSE</Text>
-          <Text style={styles.instructions}>Serás redirigido a tu banco para autorizar el pago de forma segura.</Text>
-
-          <PrimaryButton title="Usar datos de prueba" variant="outline" onPress={fillTestData} />
-
-          <Text style={styles.label}>Tipo de persona</Text>
-          <View style={styles.methodRow}>
-            <CategoryChip label="Natural" active={entityType === 'individual'} onPress={() => setEntityType('individual')} />
-            <CategoryChip label="Jurídica" active={entityType === 'association'} onPress={() => setEntityType('association')} />
-          </View>
-
-          <Text style={styles.label}>Nombres</Text>
-          <TextInput style={styles.input} value={firstName} onChangeText={setFirstName} placeholder="Nombres" />
-
-          <Text style={styles.label}>Apellidos</Text>
-          <TextInput style={styles.input} value={lastName} onChangeText={setLastName} placeholder="Apellidos" />
-
-          <Text style={styles.label}>Correo electrónico</Text>
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="correo@ejemplo.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-
-          <Text style={styles.label}>Tipo de documento</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 4 }}>
-            {DOC_TYPES.map((d) => (
-              <CategoryChip key={d.value} label={d.value} active={docType === d.value} onPress={() => setDocType(d.value)} />
-            ))}
-          </ScrollView>
-
-          <Text style={styles.label}>Número de documento</Text>
-          <TextInput
-            style={styles.input}
-            value={docNumber}
-            onChangeText={setDocNumber}
-            placeholder="Número de documento"
-            keyboardType="number-pad"
-          />
-
-          <Text style={styles.label}>Ciudad</Text>
-          <TextInput style={styles.input} value={city} onChangeText={setCity} placeholder="Ciudad" />
-
-          <Text style={styles.label}>Barrio</Text>
-          <TextInput style={styles.input} value={neighborhood} onChangeText={setNeighborhood} placeholder="Barrio" />
-
-          <Text style={styles.label}>Código postal</Text>
-          <TextInput
-            style={styles.input}
-            value={zipCode}
-            onChangeText={setZipCode}
-            placeholder="Código postal"
-            keyboardType="number-pad"
-          />
-
-          <Text style={styles.label}>Banco</Text>
-          {loadingBanks && <Text style={styles.muted}>Cargando bancos...</Text>}
-          {banksError && <Text style={styles.error}>{banksError}</Text>}
-          {!loadingBanks && !banksError && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 4 }}>
-              {banks.map((b) => (
-                <CategoryChip key={b.id} label={b.description} active={bankId === b.id} onPress={() => setBankId(b.id)} />
-              ))}
-            </ScrollView>
-          )}
+          <Text style={styles.instructions}>
+            Te llevaremos a Mercado Pago, donde eliges tu banco y autorizas el pago de forma segura. Al terminar
+            volverás automáticamente a tu pedido.
+          </Text>
         </View>
       ) : (
         <View style={styles.card}>
@@ -312,7 +197,7 @@ export default function Checkout() {
       <PrimaryButton title={method === 'pse' ? 'Pagar con PSE' : 'Confirmar pedido'} onPress={submitOrder} loading={submitting} />
       <Text style={styles.note}>
         {method === 'pse'
-          ? 'Se abrirá una ventana segura de tu banco para autorizar el pago.'
+          ? 'El pedido se confirma automáticamente cuando tu banco aprueba el pago.'
           : 'Tu pedido quedará en revisión hasta que el vendedor confirme el pago recibido.'}
       </Text>
     </ScrollView>
@@ -336,7 +221,6 @@ const styles = StyleSheet.create({
   key: { fontWeight: '700', color: COLORS.text, marginBottom: 8, textAlign: 'center' },
   instructions: { color: COLORS.muted, fontSize: 13, textAlign: 'center', marginBottom: 8 },
   muted: { color: COLORS.muted, marginBottom: 8 },
-  error: { color: COLORS.danger, marginBottom: 8, fontSize: 13 },
   label: { fontSize: 13, fontWeight: '700', color: COLORS.text, marginBottom: 6, marginTop: 10 },
   input: { backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 12, fontSize: 14 },
   proof: { width: 140, height: 140, borderRadius: 8, marginTop: 10, alignSelf: 'center' },

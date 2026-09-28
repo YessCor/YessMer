@@ -56,7 +56,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems((prev) => prev.map((i) => (i.product.id === productId ? { ...i, quantity } : i)));
   };
 
-  const clear = () => setItems([]);
+  // Se escribe de inmediato: el pago con PSE en web sale de la app justo después de vaciar el carrito.
+  const clear = () => {
+    setItems([]);
+    AsyncStorage.setItem(CART_KEY, '[]');
+  };
 
   const total = items.reduce((sum, i) => sum + i.product.price * i.quantity, 0);
   const count = items.reduce((sum, i) => sum + i.quantity, 0);

@@ -82,19 +82,21 @@ Cuando un cliente compra:
 
 ## 6. Configurar Mercado Pago (pago con PSE)
 
-Además del pago manual, los clientes pueden pagar con **PSE a través de Mercado Pago** (débito a cualquier banco colombiano, con confirmación automática). Esto necesita un backend, así que se implementó con **Supabase Edge Functions** (ya incluidas en `supabase/functions/`).
+Además del pago manual, los clientes pueden pagar con **PSE a través de Mercado Pago Checkout Pro** (débito a cualquier banco colombiano, con confirmación automática). La app redirige a la página de pago de Mercado Pago (limitada a PSE), donde el cliente elige su banco; al terminar vuelve a su pedido y el webhook lo confirma. Esto necesita un backend, así que se implementó con **Supabase Edge Functions** (en `supabase/functions/`).
 
-### 6.1 Aplica la migración de base de datos
+### 6.1 Aplica las migraciones de base de datos
 
-En **Supabase → SQL Editor**, corre el contenido de `supabase/migration_005_mercadopago.sql`.
+En **Supabase → SQL Editor**, corre en orden `supabase/migration_005_mercadopago.sql` y `supabase/migration_006_mercadopago_orders_api.sql`.
 
 ### 6.2 Consigue tus credenciales de Mercado Pago
 
-1. Entra a [mercadopago.com.co/developers/panel](https://www.mercadopago.com.co/developers/panel) e inicia sesión con tu cuenta de Mercado Pago.
-2. Crea una aplicación (o usa una existente).
-3. En el menú de tu aplicación busca las secciones **Pruebas → Credenciales de prueba** y **Producción → Credenciales de producción** (ambas muestran un Access Token que empieza con `APP_USR-`; la sección en la que estás parado es lo que distingue si es de prueba o real, no el prefijo).
-   - Usa el **Access Token de "Credenciales de prueba"** mientras haces pruebas.
-   - Cambia al de **"Credenciales de producción"** cuando vayas a cobrar de verdad.
+**Para pruebas (sandbox)** — las "Credenciales de prueba" automáticas de la aplicación NO sirven para PSE. Se usan cuentas de prueba:
+
+1. En [mercadopago.com.co/developers/panel](https://www.mercadopago.com.co/developers/panel) → tu aplicación → **Cuentas de prueba**, crea una cuenta **Vendedor** y una **Comprador**.
+2. En una ventana de incógnito inicia sesión en Mercado Pago con el usuario/contraseña de la cuenta **Vendedor**, crea una aplicación y copia su Access Token de **Producción → Credenciales de producción**. Ese es el token de sandbox.
+3. Para pagar, inicia sesión en la página de Mercado Pago con la cuenta **Comprador**; en el banco simulado de PSE puedes aprobar o rechazar el pago.
+
+**Para cobrar de verdad** — usa el Access Token de **Producción → Credenciales de producción** de tu cuenta real.
 
 ### 6.3 Instala el CLI de Supabase y enlaza tu proyecto
 
@@ -104,7 +106,7 @@ supabase login
 supabase link --project-ref TU-PROJECT-REF   # el ID que aparece en la URL de tu proyecto Supabase
 ```
 
-### 6.4 Configura el secret del Access Token de prueba
+### 6.4 Configura el secret del Access Token
 
 ```bash
 supabase secrets set MP_TEST_ACCESS_TOKEN=TU_ACCESS_TOKEN
@@ -115,7 +117,6 @@ supabase secrets set MP_TEST_ACCESS_TOKEN=TU_ACCESS_TOKEN
 ### 6.5 Despliega las Edge Functions
 
 ```bash
-supabase functions deploy mp-banks
 supabase functions deploy mp-create-payment
 supabase functions deploy mp-webhook --no-verify-jwt
 supabase functions deploy mp-return --no-verify-jwt
@@ -123,19 +124,15 @@ supabase functions deploy mp-return --no-verify-jwt
 
 `mp-webhook` y `mp-return` llevan `--no-verify-jwt` porque Mercado Pago las llama directamente, sin token de sesión de tu app.
 
-### 6.6 Configura el webhook en Mercado Pago
+### 6.6 Webhook
 
-En el panel de tu aplicación → **Webhooks** → agrega:
+No hay que configurar nada en el panel: cada pago envía a Mercado Pago la URL `https://TU-PROJECT-REF.supabase.co/functions/v1/mp-webhook` (`notification_url`). Cuando el banco confirma (o rechaza) el pago, el pedido pasa automáticamente a **"Pago confirmado"** (o **"Pago rechazado"**) y se descuenta el stock. Si el monto pagado es menor al total, queda en **"Pago en revisión"** para que lo revises tú.
 
-```
-https://TU-PROJECT-REF.supabase.co/functions/v1/mp-webhook
-```
+El total que se cobra se calcula en el servidor con los precios actuales de los productos, no con los que envía la app.
 
-Suscríbete al evento **Pagos**. Así, cuando el banco confirme (o rechace) el pago, Mercado Pago le avisa a tu app y el pedido pasa automáticamente a **"Pago confirmado"** (o **"Pago rechazado"**), descontando el stock igual que con la confirmación manual.
+### 6.7 Pasar a producción
 
-### 6.7 Probar
-
-Con el Access Token de la sección "Credenciales de prueba", Mercado Pago simula el flujo de PSE con un banco de prueba: al elegirlo, te lleva a una pantalla donde puedes simular "Pago aprobado" o "Pago rechazado" sin transferir dinero real. Cuando quieras cobrar de verdad, reemplaza el secret `MP_TEST_ACCESS_TOKEN` por el Access Token de "Credenciales de producción" (no hay que tocar el código).
+Reemplaza el valor del secret `MP_TEST_ACCESS_TOKEN` por el Access Token de producción de tu cuenta real (no hay que tocar el código). Si publicas la versión web en un dominio propio, agrega también el secret `APP_WEB_URL` (ej. `https://tutienda.com`) para que Mercado Pago pueda devolver al cliente a esa web al terminar de pagar.
 
 ## 7. Estructura del proyecto
 
@@ -162,7 +159,7 @@ lib/mercadopago.ts      Cliente para las Edge Functions de Mercado Pago (PSE)
 types/                  Tipos de TypeScript
 supabase/schema.sql     Script SQL completo (tablas + seguridad)
 supabase/migration_005_mercadopago.sql  Columnas de pago con Mercado Pago
-supabase/functions/     Edge Functions: mp-banks, mp-create-payment, mp-webhook, mp-return
+supabase/functions/     Edge Functions: mp-create-payment, mp-webhook, mp-return
 ```
 
 ## 8. Cómo monetizas
