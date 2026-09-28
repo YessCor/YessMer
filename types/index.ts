@@ -39,6 +39,8 @@ export type OrderStatus =
   | 'rechazado'
   | 'cancelado';
 
+export type PaymentMethod = 'manual' | 'mercadopago_pse';
+
 export type Order = {
   id: string;
   user_id: string;
@@ -48,6 +50,10 @@ export type Order = {
   shipping_address: string | null;
   shipping_phone: string | null;
   notes: string | null;
+  payment_method: PaymentMethod;
+  mp_payment_id: string | null;
+  mp_status: string | null;
+  mp_status_detail: string | null;
   created_at: string;
   updated_at: string;
 };

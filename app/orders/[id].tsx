@@ -13,12 +13,34 @@ export default function OrderDetail() {
   const [items, setItems] = useState<OrderItem[]>([]);
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | undefined;
+
+    const load = async () => {
       const { data: o } = await supabase.from('orders').select('*').eq('id', id).single();
+      if (cancelled) return;
       setOrder(o as Order);
-      const { data: its } = await supabase.from('order_items').select('*, products(images)').eq('order_id', id);
-      setItems(its ?? []);
-    })();
+      // Mientras el pago con Mercado Pago sigue pendiente, refresca el estado periódicamente
+      // (el webhook lo actualiza en segundo plano cuando el banco confirma el pago).
+      if (o && o.payment_method === 'mercadopago_pse' && o.status === 'pendiente_pago' && !timer) {
+        timer = setInterval(load, 4000);
+      } else if (timer && (!o || o.status !== 'pendiente_pago')) {
+        clearInterval(timer);
+        timer = undefined;
+      }
+    };
+
+    load();
+    supabase
+      .from('order_items')
+      .select('*, products(images)')
+      .eq('order_id', id)
+      .then(({ data }) => !cancelled && setItems(data ?? []));
+
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
   }, [id]);
 
   if (!order) return <View style={styles.container} />;
@@ -41,6 +63,13 @@ export default function OrderDetail() {
             <Text style={styles.infoValue}>{order.shipping_address}</Text>
             <Text style={styles.infoLabel}>Teléfono</Text>
             <Text style={styles.infoValue}>{order.shipping_phone}</Text>
+            <Text style={styles.infoLabel}>Método de pago</Text>
+            <Text style={styles.infoValue}>
+              {order.payment_method === 'mercadopago_pse' ? 'PSE (Mercado Pago)' : 'Nequi / Bre-B'}
+            </Text>
+            {order.payment_method === 'mercadopago_pse' && order.mp_status && (
+              <Text style={styles.mpStatus}>Estado en Mercado Pago: {order.mp_status_detail || order.mp_status}</Text>
+            )}
             {order.payment_proof_url && (
               <>
                 <Text style={styles.infoLabel}>Comprobante enviado</Text>
@@ -70,6 +99,7 @@ const styles = StyleSheet.create({
   infoCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: COLORS.border, marginBottom: 14 },
   infoLabel: { color: COLORS.muted, fontSize: 12, marginTop: 8 },
   infoValue: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  mpStatus: { color: COLORS.muted, fontSize: 12, marginTop: 4 },
   proof: { width: 120, height: 120, borderRadius: 8, marginTop: 8 },
   itemRow: {
     flexDirection: 'row',

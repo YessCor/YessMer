@@ -83,6 +83,15 @@ export default function AdminOrderDetail() {
             <Text style={styles.infoValue}>{order.shipping_address}</Text>
             <Text style={styles.infoLabel}>Teléfono</Text>
             <Text style={styles.infoValue}>{order.shipping_phone}</Text>
+            <Text style={styles.infoLabel}>Método de pago</Text>
+            <Text style={styles.infoValue}>
+              {order.payment_method === 'mercadopago_pse' ? 'PSE (Mercado Pago)' : 'Nequi / Bre-B'}
+            </Text>
+            {order.payment_method === 'mercadopago_pse' && order.mp_status && (
+              <Text style={styles.mpStatus}>
+                Mercado Pago: {order.mp_status_detail || order.mp_status} (id {order.mp_payment_id})
+              </Text>
+            )}
             {order.payment_proof_url && (
               <>
                 <Text style={styles.infoLabel}>Comprobante de pago</Text>
@@ -124,6 +133,7 @@ const styles = StyleSheet.create({
   infoCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: COLORS.border, marginBottom: 14 },
   infoLabel: { color: COLORS.muted, fontSize: 12, marginTop: 8 },
   infoValue: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  mpStatus: { color: COLORS.muted, fontSize: 12, marginTop: 4 },
   proof: { width: '100%', height: 260, borderRadius: 8, marginTop: 8, backgroundColor: '#000' },
   itemRow: {
     flexDirection: 'row',
